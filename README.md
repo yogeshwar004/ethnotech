@@ -12,8 +12,11 @@ Domain: App Development, Web Development
 
 🚀 Technologies Used
 [Technology 1 – Java]
+
 [Framework – Working on it]
+
 [Database – Working on it]
+
 Other tools and libraries as required
 
 🎯 Objectives
