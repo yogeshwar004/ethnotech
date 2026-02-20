@@ -1,407 +1,435 @@
 import java.util.*;
 
-// ---------- DOMAIN CLASSES ----------
+// ============================================================
+//  MAGICAL FOOD FESTIVAL MANAGER
+//  Collections Used:
+//    ArrayList  -> Food Stalls
+//    Vector     -> Dishes per Stall (Chef updates)
+//    Queue      -> Customer waiting line
+//    Stack      -> Customer's visited stall backtracking
+//    LinkedList -> Daily festival history
+// ============================================================
+
+// ─────────────────────────────────────────────────────────────
+//  MODEL CLASSES
+// ─────────────────────────────────────────────────────────────
 
 class Dish {
     String name;
     double price;
-    int spiceLevel; // 1-5
-    String magicalEffect;
+    String specialEffect; // e.g. "Glowing Eyes", "Flying Feeling"
 
-    Dish(String name, double price, int spiceLevel, String magicalEffect) {
+    Dish(String name, double price, String specialEffect) {
         this.name = name;
         this.price = price;
-        this.spiceLevel = spiceLevel;
-        this.magicalEffect = magicalEffect;
+        this.specialEffect = specialEffect;
     }
 
-    @Override
     public String toString() {
-        return name + " (₹" + price + ", spice " + spiceLevel + ", effect: " + magicalEffect + ")";
+        return String.format("  %-20s ₹%-8.2f [%s]", name, price, specialEffect);
     }
 }
 
 class Stall {
-    int stallId;
+    int id;
     String name;
-    String cuisineType;
-    double rating;    // 1-5
-    double avgPrice;  // approximate price per dish
-    Vector<Dish> dishes = new Vector<>();
+    String cuisine;
+    double rating;
+    Vector<Dish> dishes = new Vector<>(); // Chef continuously updates dishes
 
-    Stall(int stallId, String name, String cuisineType, double rating, double avgPrice) {
-        this.stallId = stallId;
+    Stall(int id, String name, String cuisine, double rating) {
+        this.id = id;
         this.name = name;
-        this.cuisineType = cuisineType;
+        this.cuisine = cuisine;
         this.rating = rating;
-        this.avgPrice = avgPrice;
     }
 
-    @Override
     public String toString() {
-        return "[" + stallId + "] " + name + " - " + cuisineType +
-                " (Rating: " + rating + ", Avg ₹" + avgPrice + ")";
+        return String.format("[%d] %-20s | Cuisine: %-12s | Rating: %.1f/5.0",
+                id, name, cuisine, rating);
     }
 }
 
 class Customer {
-    int customerId;
+    int id;
     String name;
-    String mood;          // Happy, Adventurous, Confused
-    int hungerLevel;      // 1-10
+    String mood;          // Happy | Adventurous | Confused
     String preferredCuisine;
-    Stack<Stall> visitedStalls = new Stack<>();
+    Stack<String> trail;  // Tracks last visited stalls (backtracking support)
 
-    Customer(int customerId, String name, String mood, int hungerLevel, String preferredCuisine) {
-        this.customerId = customerId;
+    Customer(int id, String name, String mood, String preferredCuisine) {
+        this.id = id;
         this.name = name;
         this.mood = mood;
-        this.hungerLevel = hungerLevel;
         this.preferredCuisine = preferredCuisine;
+        this.trail = new Stack<>();
     }
 
-    @Override
     public String toString() {
-        return "#" + customerId + " " + name + " [Mood: " + mood +
-                ", Hunger: " + hungerLevel + ", Pref: " + preferredCuisine + "]";
+        return String.format("#%-3d %-15s | Mood: %-12s | Pref: %s",
+                id, name, mood, preferredCuisine);
     }
 }
 
 class VisitRecord {
     String customerName;
     String stallName;
-    long visitNo;
-    double amountSpent;
+    String dishOrdered;
+    double amountPaid;
+    int serialNo;
 
-    VisitRecord(String customerName, String stallName, long visitNo, double amountSpent) {
+    VisitRecord(int serialNo, String customerName, String stallName,
+                String dishOrdered, double amountPaid) {
+        this.serialNo = serialNo;
         this.customerName = customerName;
         this.stallName = stallName;
-        this.visitNo = visitNo;
-        this.amountSpent = amountSpent;
+        this.dishOrdered = dishOrdered;
+        this.amountPaid = amountPaid;
     }
 
-    @Override
     public String toString() {
-        return "#" + visitNo + " " + customerName + " visited " + stallName +
-                " and spent ₹" + amountSpent;
+        return String.format("[Visit #%d] %-15s -> %-20s | Ordered: %-20s | Paid: ₹%.2f",
+                serialNo, customerName, stallName, dishOrdered, amountPaid);
     }
 }
 
-// ---------- FESTIVAL MANAGER USING COLLECTIONS ----------
+// ─────────────────────────────────────────────────────────────
+//  FESTIVAL MANAGER
+// ─────────────────────────────────────────────────────────────
 
 class FestivalManager {
-    // All stalls in ArrayList
-    private ArrayList<Stall> stalls = new ArrayList<>();
 
-    // Customer line as Queue
-    private Queue<Customer> customerQueue = new LinkedList<>();
+    ArrayList<Stall>      stalls        = new ArrayList<>();   // All stalls
+    Queue<Customer>       customerQueue = new LinkedList<>();   // Customer line
+    LinkedList<VisitRecord> history     = new LinkedList<>();   // Daily history
 
-    // Daily history as LinkedList
-    private LinkedList<VisitRecord> history = new LinkedList<>();
+    private int visitSerial = 1;
+    private Scanner sc;
 
-    private long visitCounter = 1;
+    FestivalManager(Scanner sc) { this.sc = sc; }
 
-    // -------- STALL OPERATIONS --------
-    public void addStall(Scanner sc) {
-        System.out.print("Enter Stall ID: ");
-        int id = sc.nextInt();
-        sc.nextLine();
-        System.out.print("Enter Stall Name: ");
-        String name = sc.nextLine();
-        System.out.print("Enter Cuisine Type: ");
-        String cuisine = sc.nextLine();
-        System.out.print("Enter Rating (1-5): ");
-        double rating = sc.nextDouble();
-        System.out.print("Enter Average Price: ");
-        double avgPrice = sc.nextDouble();
-        sc.nextLine();
-
-        Stall stall = new Stall(id, name, cuisine, rating, avgPrice);
-        stalls.add(stall);
-        System.out.println("Stall added: " + stall);
+    // ── Divider helper ──────────────────────────────────────
+    private void line() {
+        System.out.println("─".repeat(65));
     }
 
-    private Stall findStallById(int id) {
-        for (Stall s : stalls) {
-            if (s.stallId == id) return s;
+    // ── 1. ADD NEW FOOD STALL ───────────────────────────────
+    public void addStall() {
+        line();
+        System.out.println("  ★  ADD NEW FOOD STALL");
+        line();
+        System.out.print("  Stall ID    : ");
+        int id = Integer.parseInt(sc.nextLine().trim());
+        System.out.print("  Stall Name  : ");
+        String name = sc.nextLine().trim();
+        System.out.print("  Cuisine Type: ");
+        String cuisine = sc.nextLine().trim();
+        System.out.print("  Rating(1-5) : ");
+        double rating = Double.parseDouble(sc.nextLine().trim());
+
+        stalls.add(new Stall(id, name, cuisine, rating));
+        System.out.println("\n  ✔ Stall Added Successfully!");
+    }
+
+    // ── 2. CHEF UPDATES DISHES ─────────────────────────────
+    public void manageDishes() {
+        if (stalls.isEmpty()) { System.out.println("  No stalls exist yet."); return; }
+        line();
+        System.out.println("  ★  CHEF DISH MANAGEMENT  (Vector)");
+        line();
+        listStalls();
+        System.out.print("  Select Stall ID: ");
+        int id = Integer.parseInt(sc.nextLine().trim());
+        Stall stall = findStall(id);
+        if (stall == null) { System.out.println("  Stall not found!"); return; }
+
+        System.out.println("\n  1. Add Dish   2. Remove Dish   3. View Dishes   4. Back");
+        System.out.print("  Choice: ");
+        int ch = Integer.parseInt(sc.nextLine().trim());
+
+        switch (ch) {
+            case 1:
+                System.out.print("  Dish Name     : ");
+                String dn = sc.nextLine().trim();
+                System.out.print("  Price         : ");
+                double dp = Double.parseDouble(sc.nextLine().trim());
+                System.out.print("  Magical Effect: ");
+                String de = sc.nextLine().trim();
+                stall.dishes.add(new Dish(dn, dp, de));
+                System.out.println("  ✔ Dish Added to " + stall.name);
+                break;
+            case 2:
+                if (stall.dishes.isEmpty()) { System.out.println("  No dishes."); break; }
+                printDishes(stall);
+                System.out.print("  Dish index to remove (1-based): ");
+                int ri = Integer.parseInt(sc.nextLine().trim()) - 1;
+                if (ri >= 0 && ri < stall.dishes.size()) {
+                    System.out.println("  ✔ Removed: " + stall.dishes.remove(ri).name);
+                } else System.out.println("  Invalid index.");
+                break;
+            case 3:
+                if (stall.dishes.isEmpty()) System.out.println("  No dishes yet.");
+                else printDishes(stall);
+                break;
+            default:
+                System.out.println("  Back to main menu.");
         }
+    }
+
+    // ── 3. ADD CUSTOMER TO QUEUE ────────────────────────────
+    public void addCustomer() {
+        line();
+        System.out.println("  ★  ADD CUSTOMER TO QUEUE");
+        line();
+        System.out.print("  Customer ID    : ");
+        int id = Integer.parseInt(sc.nextLine().trim());
+        System.out.print("  Name           : ");
+        String name = sc.nextLine().trim();
+        System.out.print("  Mood (Happy / Adventurous / Confused): ");
+        String mood = sc.nextLine().trim();
+        System.out.print("  Preferred Cuisine: ");
+        String pref = sc.nextLine().trim();
+
+        customerQueue.add(new Customer(id, name, mood, pref));
+        System.out.println("\n  ✔ " + name + " joined the queue. Queue size: " + customerQueue.size());
+    }
+
+    // ── 4. SERVE NEXT CUSTOMER ──────────────────────────────
+    public void serveNextCustomer() {
+        if (customerQueue.isEmpty()) { System.out.println("  Queue is empty!"); return; }
+        if (stalls.isEmpty())        { System.out.println("  No stalls available!"); return; }
+
+        Customer c = customerQueue.poll();
+        line();
+        System.out.println("  ★  SERVING CUSTOMER: " + c.name.toUpperCase());
+        line();
+        System.out.println("  Customer: " + c);
+
+        Stall recommended = recommend(c);
+        System.out.println("\n  Smart Recommendation based on mood [" + c.mood + "]:");
+        System.out.println("  → " + recommended);
+
+        // Assign a dish if available
+        String dishName = "General Order";
+        double amount = 0;
+        if (!recommended.dishes.isEmpty()) {
+            Dish d = recommended.dishes.get(0); // first available dish
+            dishName = d.name;
+            amount = d.price;
+            System.out.println("\n  Suggested Dish: " + d);
+        } else {
+            System.out.print("  No dishes listed. Enter amount paid manually: ₹");
+            amount = Double.parseDouble(sc.nextLine().trim());
+        }
+
+        // Track stall in customer's trail (Stack)
+        c.trail.push(recommended.name);
+
+        // Log to history (LinkedList)
+        history.addLast(new VisitRecord(visitSerial++, c.name, recommended.name, dishName, amount));
+        System.out.println("\n  ✔ Visit recorded. Remaining queue: " + customerQueue.size());
+    }
+
+    // ── 5. TRACK LAST VISITED STALLS (Stack) ───────────────
+    public void trackVisit() {
+        line();
+        System.out.println("  ★  TRACK CUSTOMER STALL TRAIL  (Stack)");
+        line();
+        System.out.print("  Customer Name: ");
+        String name = sc.nextLine().trim();
+        System.out.print("  Stall visited (name): ");
+        String stallName = sc.nextLine().trim();
+
+        // Find or build a temp tracking object
+        Customer found = findServedCustomer(name);
+        if (found == null) {
+            // Create a quick tracking entry
+            found = new Customer(0, name, "Happy", "Any");
+        }
+        found.trail.push(stallName);
+        System.out.println("  ✔ Stall \"" + stallName + "\" pushed to " + name + "'s trail.");
+        System.out.println("  Current trail (top = latest): " + found.trail);
+    }
+
+    // ── 6. CUSTOMER FORGETS → GO BACK  (Stack pop) ─────────
+    public void goBack() {
+        line();
+        System.out.println("  ★  CUSTOMER FORGOT SOMETHING → GO BACK  (Stack)");
+        line();
+        System.out.print("  Customer Name: ");
+        String name = sc.nextLine().trim();
+
+        Customer found = findServedCustomer(name);
+        if (found == null || found.trail.isEmpty()) {
+            System.out.println("  No stall trail found for this customer.");
+            return;
+        }
+        String lastStall = found.trail.pop();
+        System.out.println("  ✔ " + name + " is going back to: " + lastStall);
+        if (!found.trail.isEmpty()) {
+            System.out.println("  Previous stall before that: " + found.trail.peek());
+        } else {
+            System.out.println("  That was the first stall. Nothing further back.");
+        }
+    }
+
+    // ── 7. SHOW FULL DAILY HISTORY (LinkedList) ─────────────
+    public void showHistory() {
+        line();
+        System.out.println("  ★  DAILY FESTIVAL HISTORY  (LinkedList)");
+        line();
+        if (history.isEmpty()) { System.out.println("  No visits recorded yet."); return; }
+        for (VisitRecord vr : history) System.out.println("  " + vr);
+        System.out.println("\n  Total visits today: " + history.size());
+    }
+
+    // ── 8. SHOW LAST N VISITS ───────────────────────────────
+    public void showLastN() {
+        if (history.isEmpty()) { System.out.println("  No history yet."); return; }
+        System.out.print("  Show last N visits. Enter N: ");
+        int n = Integer.parseInt(sc.nextLine().trim());
+        int start = Math.max(0, history.size() - n);
+        line();
+        System.out.println("  ★  LAST " + n + " VISITS");
+        line();
+        for (int i = start; i < history.size(); i++) {
+            System.out.println("  " + history.get(i));
+        }
+    }
+
+    // ── 9. VIEW ALL STALLS ──────────────────────────────────
+    public void listStalls() {
+        if (stalls.isEmpty()) { System.out.println("  No stalls added yet."); return; }
+        System.out.println("\n  All Stalls:");
+        for (Stall s : stalls) System.out.println("  " + s);
+    }
+
+    // ── 10. VIEW QUEUE ──────────────────────────────────────
+    public void viewQueue() {
+        if (customerQueue.isEmpty()) { System.out.println("  Queue is empty."); return; }
+        line();
+        System.out.println("  ★  CURRENT CUSTOMER QUEUE");
+        line();
+        int pos = 1;
+        for (Customer c : customerQueue) {
+            System.out.println("  " + pos++ + ". " + c);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  SMART RECOMMENDATION ENGINE
+    // ─────────────────────────────────────────────────────────
+    private Stall recommend(Customer c) {
+        List<Stall> pool = new ArrayList<>();
+        for (Stall s : stalls) {
+            if (s.cuisine.equalsIgnoreCase(c.preferredCuisine)) pool.add(s);
+        }
+        if (pool.isEmpty()) pool = new ArrayList<>(stalls);
+
+        Random rand = new Random();
+        switch (c.mood.toLowerCase()) {
+            case "adventurous":
+                // Highest rated stall
+                return pool.stream().max(Comparator.comparingDouble(s -> s.rating)).orElse(pool.get(0));
+            case "confused":
+                // Random pick
+                return pool.get(rand.nextInt(pool.size()));
+            case "happy":
+            default:
+                // Top 3, pick randomly
+                pool.sort((a, b) -> Double.compare(b.rating, a.rating));
+                return pool.get(rand.nextInt(Math.min(3, pool.size())));
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  UTILITY HELPERS
+    // ─────────────────────────────────────────────────────────
+    private Stall findStall(int id) {
+        for (Stall s : stalls) if (s.id == id) return s;
         return null;
     }
 
-    public void manageDishes(Scanner sc) {
-        System.out.print("Enter Stall ID to manage dishes: ");
-        int id = sc.nextInt();
-        sc.nextLine();
-        Stall stall = findStallById(id);
-        if (stall == null) {
-            System.out.println("Stall not found.");
-            return;
-        }
+    // Tracks served customers with trails (simple in-memory map)
+    private Map<String, Customer> servedMap = new HashMap<>();
 
-        int choice;
-        do {
-            System.out.println("\nDish Menu for " + stall.name);
-            System.out.println("1. Add Dish");
-            System.out.println("2. Remove Dish");
-            System.out.println("3. View Dishes");
-            System.out.println("4. Back");
-            System.out.print("Enter choice: ");
-            choice = sc.nextInt();
-            sc.nextLine();
-
-            switch (choice) {
-                case 1:
-                    System.out.print("Dish name: ");
-                    String dname = sc.nextLine();
-                    System.out.print("Price: ");
-                    double price = sc.nextDouble();
-                    System.out.print("Spice Level (1-5): ");
-                    int spice = sc.nextInt();
-                    sc.nextLine();
-                    System.out.print("Magical Effect: ");
-                    String effect = sc.nextLine();
-                    stall.dishes.add(new Dish(dname, price, spice, effect));
-                    System.out.println("Dish added.");
-                    break;
-                case 2:
-                    for (int i = 0; i < stall.dishes.size(); i++) {
-                        System.out.println((i + 1) + ". " + stall.dishes.get(i));
-                    }
-                    System.out.print("Enter dish index to remove: ");
-                    int idx = sc.nextInt();
-                    sc.nextLine();
-                    if (idx >= 1 && idx <= stall.dishes.size()) {
-                        Dish removed = stall.dishes.remove(idx - 1);
-                        System.out.println("Removed: " + removed);
-                    } else {
-                        System.out.println("Invalid index.");
-                    }
-                    break;
-                case 3:
-                    if (stall.dishes.isEmpty()) {
-                        System.out.println("No dishes yet.");
-                    } else {
-                        for (Dish d : stall.dishes) {
-                            System.out.println(" - " + d);
-                        }
-                    }
-                    break;
-                case 4:
-                    System.out.println("Back to main menu.");
-                    break;
-                default:
-                    System.out.println("Invalid choice.");
-            }
-        } while (choice != 4);
+    private Customer findServedCustomer(String name) {
+        return servedMap.getOrDefault(name.toLowerCase(), null);
     }
 
-    // -------- CUSTOMER OPERATIONS --------
-
-    public void addCustomerToQueue(Scanner sc) {
-        System.out.print("Customer ID: ");
-        int id = sc.nextInt();
-        sc.nextLine();
-        System.out.print("Name: ");
-        String name = sc.nextLine();
-        System.out.print("Mood (Happy/Adventurous/Confused): ");
-        String mood = sc.nextLine();
-        System.out.print("Hunger Level (1-10): ");
-        int hunger = sc.nextInt();
-        sc.nextLine();
-        System.out.print("Preferred Cuisine: ");
-        String pref = sc.nextLine();
-
-        Customer c = new Customer(id, name, mood, hunger, pref);
-        customerQueue.add(c);
-        System.out.println("Customer added to queue: " + c);
+    public void registerServed(Customer c) {
+        servedMap.put(c.name.toLowerCase(), c);
     }
 
-    private Stall recommendStall(Customer c) {
-        if (stalls.isEmpty()) return null;
-
-        List<Stall> matching = new ArrayList<>();
-        for (Stall s : stalls) {
-            if (s.cuisineType.equalsIgnoreCase(c.preferredCuisine)) {
-                matching.add(s);
-            }
-        }
-        List<Stall> baseList = matching.isEmpty() ? stalls : matching;
-
-        Stall best = null;
-        Random rand = new Random();
-
-        switch (c.mood.toLowerCase()) {
-            case "adventurous":
-                for (Stall s : baseList) {
-                    if (best == null || s.rating > best.rating) best = s;
-                }
-                break;
-            case "confused":
-                double bestDiff = Double.MAX_VALUE;
-                for (Stall s : baseList) {
-                    double diff = Math.abs(s.avgPrice - 200); // mid price anchor
-                    if (diff < bestDiff) {
-                        bestDiff = diff;
-                        best = s;
-                    }
-                }
-                break;
-            case "happy":
-            default:
-                baseList.sort((a, b) -> Double.compare(b.rating, a.rating));
-                int limit = Math.min(3, baseList.size());
-                best = baseList.get(rand.nextInt(limit));
-        }
-        return best;
-    }
-
-    public void serveNextCustomer(Scanner sc) {
-        if (customerQueue.isEmpty()) {
-            System.out.println("No customers in queue.");
-            return;
-        }
-        Customer c = customerQueue.poll();
-        System.out.println("Serving: " + c);
-
-        Stall recommended = recommendStall(c);
-        if (recommended == null) {
-            System.out.println("No stalls available.");
-            return;
-        }
-        System.out.println("Recommended stall: " + recommended);
-        c.visitedStalls.push(recommended);
-
-        System.out.print("Approx amount spent at this stall: ");
-        double amt = sc.nextDouble();
-        sc.nextLine();
-
-        history.add(new VisitRecord(c.name, recommended.name, visitCounter++, amt));
-        System.out.println("Visit recorded.");
-    }
-
-    public void customerGoToAnotherStall(Scanner sc) {
-        System.out.print("Enter Customer ID (existing served customer): ");
-        int id = sc.nextInt();
-        sc.nextLine();
-
-        System.out.print("Enter Stall ID to move to: ");
-        int stallId = sc.nextInt();
-        sc.nextLine();
-
-        Stall stall = findStallById(stallId);
-        if (stall == null) {
-            System.out.println("Stall not found.");
-            return;
-        }
-
-        // Simple demo: create temp customer object (in real app you'd track customers globally)
-        Customer temp = new Customer(id, "TempCustomer", "Happy", 5, stall.cuisineType);
-        temp.visitedStalls.push(stall);
-        System.out.println("Customer moved to stall: " + stall);
-    }
-
-    public void customerForgetAndGoBack() {
-        // This is a conceptual demo: in full design you'd keep a map of id -> Customer.
-        System.out.println("To fully support this, maintain a Map<Integer, Customer> and use their visitedStalls Stack.");
-        System.out.println("Pop from the Stack to show the last stall they were at.");
-    }
-
-    // -------- HISTORY OPERATIONS --------
-
-    public void showHistory() {
-        if (history.isEmpty()) {
-            System.out.println("No visits yet.");
-            return;
-        }
-        for (VisitRecord vr : history) {
-            System.out.println(vr);
-        }
-    }
-
-    public void showLastNVisits(Scanner sc) {
-        System.out.print("Enter N: ");
-        int n = sc.nextInt();
-        sc.nextLine();
-        if (history.isEmpty()) {
-            System.out.println("No visits yet.");
-            return;
-        }
-        int start = Math.max(0, history.size() - n);
-        for (int i = start; i < history.size(); i++) {
-            System.out.println(history.get(i));
-        }
-    }
-
-    public void showStalls() {
-        if (stalls.isEmpty()) {
-            System.out.println("No stalls created yet.");
-            return;
-        }
-        for (Stall s : stalls) {
-            System.out.println(s);
+    private void printDishes(Stall s) {
+        System.out.println("\n  Dishes at " + s.name + ":");
+        System.out.printf("  %-3s %-20s %-10s %s%n", "#", "Name", "Price", "Effect");
+        line();
+        for (int i = 0; i < s.dishes.size(); i++) {
+            System.out.println("  " + (i + 1) + ". " + s.dishes.get(i));
         }
     }
 }
 
-// ---------- MAIN APP WITH MENU ----------
+// ─────────────────────────────────────────────────────────────
+//  MAIN APPLICATION
+// ─────────────────────────────────────────────────────────────
 
 public class FestivalApp {
+
+    static void banner() {
+        System.out.println("\n╔══════════════════════════════════════════════════════════╗");
+        System.out.println("║       🍽  MAGICAL FOOD FESTIVAL MANAGER  🍽              ║");
+        System.out.println("║  Collections: ArrayList | Vector | Queue | Stack | LL   ║");
+        System.out.println("╚══════════════════════════════════════════════════════════╝");
+    }
+
+    static void menu() {
+        System.out.println("\n  ┌─────────────────────────────────┐");
+        System.out.println("  │           MAIN MENU             │");
+        System.out.println("  ├─────────────────────────────────┤");
+        System.out.println("  │  1. Add New Food Stall          │");
+        System.out.println("  │  2. Chef Manage Dishes (Vector) │");
+        System.out.println("  │  3. Add Customer to Queue       │");
+        System.out.println("  │  4. Serve Next Customer         │");
+        System.out.println("  │  5. Track Stall Visit (Stack)   │");
+        System.out.println("  │  6. Customer Goes Back (Stack)  │");
+        System.out.println("  │  7. Daily History (LinkedList)  │");
+        System.out.println("  │  8. Show Last N Visits          │");
+        System.out.println("  │  9. View All Stalls             │");
+        System.out.println("  │ 10. View Customer Queue         │");
+        System.out.println("  │  0. Exit                        │");
+        System.out.println("  └─────────────────────────────────┘");
+        System.out.print("  Enter choice: ");
+    }
+
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
-        FestivalManager manager = new FestivalManager();
+        FestivalManager fm = new FestivalManager(sc);
+        banner();
+
         int choice;
-
         do {
-            System.out.println("\n=== Magical Food Festival Manager ===");
-            System.out.println("1. Add new food stall");
-            System.out.println("2. Manage dishes for a stall (Vector)");
-            System.out.println("3. Add customer to queue");
-            System.out.println("4. Serve next customer with smart recommendation");
-            System.out.println("5. Customer goes to another stall (Stack usage demo)");
-            System.out.println("6. Customer forgets something and goes back (Stack)");
-            System.out.println("7. Show daily festival history (LinkedList)");
-            System.out.println("8. Show last N visits");
-            System.out.println("9. Show all stalls");
-            System.out.println("10. Exit");
-            System.out.print("Enter choice: ");
-            choice = sc.nextInt();
-            sc.nextLine();
-
+            menu();
+            choice = Integer.parseInt(sc.nextLine().trim());
             switch (choice) {
-                case 1:
-                    manager.addStall(sc);
-                    break;
-                case 2:
-                    manager.manageDishes(sc);
-                    break;
-                case 3:
-                    manager.addCustomerToQueue(sc);
-                    break;
-                case 4:
-                    manager.serveNextCustomer(sc);
-                    break;
-                case 5:
-                    manager.customerGoToAnotherStall(sc);
-                    break;
-                case 6:
-                    manager.customerForgetAndGoBack();
-                    break;
-                case 7:
-                    manager.showHistory();
-                    break;
-                case 8:
-                    manager.showLastNVisits(sc);
-                    break;
-                case 9:
-                    manager.showStalls();
-                    break;
-                case 10:
-                    System.out.println("Exiting. Thank you for visiting the Magical Food Festival!");
+                case 1:  fm.addStall();           break;
+                case 2:  fm.manageDishes();        break;
+                case 3:  fm.addCustomer();         break;
+                case 4:  fm.serveNextCustomer();   break;
+                case 5:  fm.trackVisit();          break;
+                case 6:  fm.goBack();              break;
+                case 7:  fm.showHistory();         break;
+                case 8:  fm.showLastN();           break;
+                case 9:  fm.listStalls();          break;
+                case 10: fm.viewQueue();           break;
+                case 0:
+                    System.out.println("\n  ✨ Thank you for visiting the Magical Food Festival! ✨\n");
                     break;
                 default:
-                    System.out.println("Invalid choice.");
+                    System.out.println("  ✖ Invalid choice. Try again.");
             }
-        } while (choice != 10);
+        } while (choice != 0);
 
         sc.close();
     }
